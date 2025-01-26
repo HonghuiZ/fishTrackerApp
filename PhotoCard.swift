@@ -2,32 +2,21 @@ import SwiftUI
 import UIKit
 
 struct PhotoCard: View {
-    let photo: Photo
+    let photo: PhotoMetadata
     
     var body: some View {
-        VStack {
-            if let uiImage = UIImage(data: photo.imageData) {
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(height: 200)
-                    .clipped()
-            }
-            
-            VStack(alignment: .leading) {
-                Text(photo.species ?? "Unknown Species")
-                    .font(.headline)
-                if let location = photo.location {
-                    Text(location)
-                        .font(.subheadline)
-                }
-                Text(photo.timestamp.formatted())
-                    .font(.caption)
-            }
-            .padding()
+        AsyncImage(url: getDocumentsDirectory().appendingPathComponent(photo.fileName)) { image in
+            image
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } placeholder: {
+            ProgressView()
         }
-        .background(Color.white)
-        .cornerRadius(10)
-        .shadow(radius: 5)
+        .frame(height: 200)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+    
+    private func getDocumentsDirectory() -> URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
 } 

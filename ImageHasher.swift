@@ -13,25 +13,100 @@ class ImageHasher {
     
     #if os(iOS)
     func calculatePerceptualHash(from image: UIImage) -> String? {
-        guard let resizedImage = resizeImage(image, to: CGSize(width: 8, height: 8)),
-              let grayScale = convertToGrayScale(resizedImage),
-              let pixelData = grayScale.cgImage?.dataProvider?.data,
-              let data: UnsafePointer<UInt8> = CFDataGetBytePtr(pixelData) else {
+        print("\n🔨 Generating Perceptual Hash")
+        
+        // Convert UIImage to CGImage
+        guard let cgImage = image.cgImage else {
+            print("❌ Failed to get CGImage from UIImage")
             return nil
         }
+        print("✅ Got CGImage")
         
-        var pixels: [UInt8] = []
-        for i in 0..<64 {
-            pixels.append(data[i])
+        // Create CIImage
+        let ciImage = CIImage(cgImage: cgImage)
+        print("✅ Created CIImage")
+        
+        // Resize to 8x8
+        let resizeFilter = CIFilter(name: "CILanczosScaleTransform")
+        resizeFilter?.setValue(ciImage, forKey: kCIInputImageKey)
+        let scale = 8.0 / max(ciImage.extent.width, ciImage.extent.height)
+        resizeFilter?.setValue(scale, forKey: kCIInputScaleKey)
+        resizeFilter?.setValue(1.0, forKey: kCIInputAspectRatioKey)
+        
+        guard let resizedImage = resizeFilter?.outputImage else {
+            print("❌ Failed to resize image")
+            return nil
+        }
+        print("✅ Resized image to 8x8")
+        
+        // Convert to grayscale
+        let grayFilter = CIFilter(name: "CIPhotoEffectNoir")
+        grayFilter?.setValue(resizedImage, forKey: kCIInputImageKey)
+        
+        guard let grayscaleImage = grayFilter?.outputImage else {
+            print("❌ Failed to convert to grayscale")
+            return nil
+        }
+        print("✅ Converted to grayscale")
+        
+        // Create context and render
+        let context = CIContext(options: nil)
+        guard let renderedImage = context.createCGImage(grayscaleImage, from: grayscaleImage.extent) else {
+            print("❌ Failed to render image")
+            return nil
+        }
+        print("✅ Rendered image")
+        
+        // Calculate average brightness
+        var total: Int = 0
+        var pixels: [Int] = []
+        
+        let width = renderedImage.width
+        let height = renderedImage.height
+        let bytesPerRow = width * 4
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        
+        guard let context = CGContext(data: nil,
+                                    width: width,
+                                    height: height,
+                                    bitsPerComponent: 8,
+                                    bytesPerRow: bytesPerRow,
+                                    space: CGColorSpaceCreateDeviceRGB(),
+                                    bitmapInfo: bitmapInfo) else {
+            print("❌ Failed to create context for pixel data")
+            return nil
+        }
+        print("✅ Created context for pixel data")
+        
+        context.draw(renderedImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        
+        guard let pixelData = context.data else {
+            print("❌ Failed to get pixel data")
+            return nil
+        }
+        print("✅ Got pixel data")
+        
+        let data = pixelData.bindMemory(to: UInt8.self, capacity: width * height * 4)
+        
+        for row in 0..<height {
+            for col in 0..<width {
+                let offset = row * bytesPerRow + col * 4
+                let brightness = Int(data[offset])
+                total += brightness
+                pixels.append(brightness)
+            }
         }
         
-        let average = pixels.reduce(0, +) / 64
+        let average = total / (width * height)
+        print("✅ Calculated average brightness: \(average)")
         
+        // Generate hash
         var hash = ""
         for pixel in pixels {
             hash += pixel > average ? "1" : "0"
         }
         
+        print("✅ Generated hash: \(hash)")
         return hash
     }
     #else
@@ -83,10 +158,15 @@ class ImageHasher {
         return bitmap
     }
     
-    func hammingDistance(_ hash1: String, _ hash2: String) -> Int {
-        guard hash1.count == hash2.count else { return Int.max }
+    func hammingDistance(_ hash1: String, _ hash2: String) -> Int? {
+        guard hash1.count == hash2.count else {
+            print("❌ Hash lengths don't match: \(hash1.count) vs \(hash2.count)")
+            return nil
+        }
         
-        return zip(hash1, hash2).filter { $0 != $1 }.count
+        let distance = zip(hash1, hash2).filter { $0 != $1 }.count
+        print("✅ Calculated Hamming distance: \(distance)")
+        return distance
     }
     
     private func resizeImage(_ image: UIImage, to size: CGSize) -> UIImage? {

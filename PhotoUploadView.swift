@@ -17,6 +17,11 @@ struct PhotoUploadView: View {
     @State private var isFishDetected = false
     @State private var detectedSpecies = ""
     @State private var manuallyConfirmedFish = false
+    @State private var showingDuplicateAlert = false
+    @State private var duplicatePhoto: PhotoMetadata?
+    
+    // Add the similarity threshold constant
+    private let similarityThreshold: Int = 10
     
     var body: some View {
         VStack {
@@ -73,7 +78,7 @@ struct PhotoUploadView: View {
                 }
             }
         }
-        .onChange(of: selectedItem) {
+        .onChange(of: selectedItem) { _ in
             Task {
                 do {
                     guard let item = selectedItem else { 
@@ -86,9 +91,27 @@ struct PhotoUploadView: View {
                         print("Failed to load image data")
                         return
                     }
-                    selectedImageData = data
-                    print("\n=== Photo Selection ===")
-                    print("Photo data loaded: \(data.count) bytes")
+                    
+                    // Check for duplicates before processing
+                    if let duplicate = checkForDuplicates(imageData: data) {
+                        print("\n=== Duplicate Check ===")
+                        print("Found similar photo:")
+                        print("- Date: \(duplicate.timestamp.formatted())")
+                        print("- Location: \(duplicate.location)")
+                        print("- Species: \(duplicate.species)")
+                        
+                        await MainActor.run {
+                            duplicatePhoto = duplicate
+                            showingDuplicateAlert = true
+                            selectedItem = nil
+                        }
+                        return
+                    }
+                    
+                    // If no duplicate, proceed with normal processing
+                    await MainActor.run {
+                        selectedImageData = data
+                    }
                     
                     // Try to get metadata directly from the image data
                     if let source = CGImageSourceCreateWithData(data as CFData, nil),
@@ -150,8 +173,33 @@ struct PhotoUploadView: View {
                         await detectFish(in: image)
                     }
                 } catch {
-                    print("❌ Error: \(error)")
+                    print("Error loading photo: \(error)")
                 }
+            }
+        }
+        .alert("Similar Photo Found", isPresented: $showingDuplicateAlert) {
+            Button("Continue Anyway") {
+                // Re-process the photo if user wants to continue
+                if let data = selectedImageData {
+                    Task {
+                        await MainActor.run {
+                            selectedImageData = data
+                        }
+                        if let image = UIImage(data: data) {
+                            await detectFish(in: image)
+                        }
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                selectedItem = nil
+                selectedImageData = nil
+            }
+        } message: {
+            if let duplicate = duplicatePhoto {
+                Text("A similar photo was taken on \(duplicate.timestamp.formatted())" + 
+                     (duplicate.location.isEmpty ? "" : " at \(duplicate.location)") +
+                     ". Do you still want to add this photo?")
             }
         }
     }
@@ -187,9 +235,22 @@ struct PhotoUploadView: View {
         // Get coordinates from metadata
         var lat: Double?
         var lon: Double?
+        var photoDate = Date() // Default to current date if we can't find original
         
         if let source = CGImageSourceCreateWithData(imageData as CFData, nil),
            let metadata = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
+            
+            // Try to get original date from EXIF
+            if let exif = metadata["{Exif}"] as? [String: Any] {
+                if let dateTimeOriginal = exif["DateTimeOriginal"] as? String {
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
+                    if let originalDate = formatter.date(from: dateTimeOriginal) {
+                        photoDate = originalDate
+                        print("📅 Using original photo date: \(photoDate)")
+                    }
+                }
+            }
             
             print("\nChecking GPS Data:")
             if let gps = metadata["{GPS}"] as? [String: Any] {
@@ -260,7 +321,7 @@ struct PhotoUploadView: View {
                 id: UUID(),
                 fileName: fileName,
                 location: location,
-                timestamp: Date(),
+                timestamp: photoDate,
                 hash: generateHash(from: imageData),
                 pHash: ImageHasher.shared.calculatePerceptualHash(from: UIImage(data: imageData) ?? UIImage()) ?? "",
                 species: detectedSpecies,
@@ -388,5 +449,71 @@ struct PhotoUploadView: View {
             }
         }
         print("=====================\n")
+    }
+
+    private func checkForDuplicates(imageData: Data) -> PhotoMetadata? {
+        print("\n=== 🔍 Checking for Duplicates ===")
+        
+        guard let newImage = UIImage(data: imageData) else {
+            print("❌ Failed to create UIImage from data")
+            print("- Data size: \(ByteCountFormatter.string(fromByteCount: Int64(imageData.count), countStyle: .file))")
+            return nil
+        }
+        
+        print("✅ Created UIImage:")
+        print("- Size: \(newImage.size)")
+        print("- Scale: \(newImage.scale)")
+        print("- Orientation: \(newImage.imageOrientation.rawValue)")
+        
+        guard let newHash = ImageHasher.shared.calculatePerceptualHash(from: newImage) else {
+            print("❌ Failed to generate perceptual hash")
+            print("- Image size: \(newImage.size)")
+            print("- Image scale: \(newImage.scale)")
+            print("- Image orientation: \(newImage.imageOrientation.rawValue)")
+            return nil
+        }
+        
+        print("📊 New image details:")
+        print("- 📦 Size: \(ByteCountFormatter.string(fromByteCount: Int64(imageData.count), countStyle: .file))")
+        print("- 🔑 Perceptual hash: \(newHash)")
+        
+        let savedPhotos = photoStore.loadMetadata()
+        print("📚 Checking against \(savedPhotos.count) existing photos")
+        
+        // First check exact hash
+        let exactHash = generateHash(from: imageData)
+        print("\n🔍 Checking for exact matches:")
+        print("- 🔑 Exact hash: \(exactHash)")
+        
+        if let exactMatch = savedPhotos.first(where: { $0.hash == exactHash }) {
+            print("‼️ Found exact duplicate:")
+            print("- 📅 Date: \(exactMatch.timestamp.formatted())")
+            print("- 📍 Location: \(exactMatch.location)")
+            print("- 🐟 Species: \(exactMatch.species)")
+            return exactMatch
+        }
+        
+        // Then check perceptual hash for similar images
+        print("\n🔍 Checking for similar images (threshold: \(similarityThreshold)):")
+        
+        for photo in savedPhotos {
+            let distance = ImageHasher.shared.hammingDistance(newHash, photo.pHash) ?? Int.max
+            print("- Comparing with photo from \(photo.timestamp.formatted()):")
+            print("  - 🔑 Hash: \(photo.pHash)")
+            print("  - 📊 Hamming distance: \(distance)")
+            
+            if distance <= similarityThreshold {
+                print("\n‼️ Found similar photo:")
+                print("- 📅 Date: \(photo.timestamp.formatted())")
+                print("- 📍 Location: \(photo.location)")
+                print("- 🐟 Species: \(photo.species)")
+                print("- 📊 Similarity score: \(100 - (distance * 100 / 256))%")
+                return photo
+            }
+        }
+        
+        print("\n✅ No duplicates found")
+        print("==================\n")
+        return nil
     }
 }

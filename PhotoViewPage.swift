@@ -27,7 +27,7 @@ struct PhotoViewPage: View {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 2) {
                         ForEach(photoStore.photos) { metadata in
-                            NavigationLink(destination: PhotoDetailView(metadata: metadata)) {
+                            NavigationLink(destination: PhotoDetailView(photo: metadata)) {
                                 if let imageData = try? Data(contentsOf: getDocumentsDirectory().appendingPathComponent(metadata.fileName)),
                                    let image = UIImage(data: imageData) {
                                     Image(uiImage: image)

@@ -1,6 +1,6 @@
 import Foundation
 
-struct PhotoMetadata: Codable, Identifiable, Hashable {
+struct PhotoMetadata: Codable, Identifiable, Equatable {
     let id: UUID
     let fileName: String
     let location: String
@@ -10,10 +10,6 @@ struct PhotoMetadata: Codable, Identifiable, Hashable {
     let species: String
     let latitude: Double?
     let longitude: Double?
-    
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
     
     static func == (lhs: PhotoMetadata, rhs: PhotoMetadata) -> Bool {
         lhs.id == rhs.id

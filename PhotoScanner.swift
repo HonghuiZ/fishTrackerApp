@@ -69,8 +69,10 @@ class PhotoScanner: ObservableObject {
                                 if !self.photoHashes.contains(exactHash) {
                                     if let pHash = ImageHasher.shared.calculatePerceptualHash(from: image) {
                                         let isTooSimilar = self.perceptualHashes.contains { existing in
-                                            let distance = ImageHasher.shared.hammingDistance(pHash, existing.hash)
-                                            return distance <= self.similarityThreshold
+                                            if let distance = ImageHasher.shared.hammingDistance(pHash, existing.hash) {
+                                                return distance <= self.similarityThreshold
+                                            }
+                                            return false
                                         }
                                         
                                         if !isTooSimilar {

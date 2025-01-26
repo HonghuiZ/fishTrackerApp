@@ -17,28 +17,22 @@ struct MapView: View {
     
     var body: some View {
         ZStack {
-            Map(selection: $selectedPhoto) {
-                ForEach(photosWithCoordinates) { photo in
-                    if let lat = photo.latitude,
-                       let lon = photo.longitude {
-                        Annotation(
-                            photo.species.isEmpty ? "Fish" : photo.species,
-                            coordinate: CLLocationCoordinate2D(
-                                latitude: lat,
-                                longitude: lon
-                            )
-                        ) {
-                            Image(systemName: "fish.fill")
-                                .foregroundColor(.blue)
-                                .background(Circle()
-                                    .fill(.white)
-                                    .frame(width: 30, height: 30))
-                                .onTapGesture {
-                                    selectedPhoto = photo
-                                    showingPhotoDetail = true
-                                }
+            Map(coordinateRegion: $region, annotationItems: photosWithCoordinates) { photo in
+                MapAnnotation(
+                    coordinate: CLLocationCoordinate2D(
+                        latitude: photo.latitude ?? 0,
+                        longitude: photo.longitude ?? 0
+                    )
+                ) {
+                    Image(systemName: "fish.fill")
+                        .foregroundColor(.blue)
+                        .background(Circle()
+                            .fill(.white)
+                            .frame(width: 30, height: 30))
+                        .onTapGesture {
+                            selectedPhoto = photo
+                            showingPhotoDetail = true
                         }
-                    }
                 }
             }
             .mapStyle(.standard)
@@ -46,11 +40,6 @@ struct MapView: View {
                 MapCompass()
                 MapScaleView()
                 MapUserLocationButton()
-            }
-            .onChange(of: selectedPhoto) { oldValue, newValue in
-                if newValue != nil {
-                    showingPhotoDetail = true
-                }
             }
             
             // Zoom controls
@@ -93,7 +82,7 @@ struct MapView: View {
         .sheet(isPresented: $showingPhotoDetail) {
             if let photo = selectedPhoto {
                 NavigationView {
-                    PhotoDetailView(metadata: photo)
+                    PhotoDetailView(photo: photo)
                         .navigationBarItems(trailing: Button("Done") {
                             showingPhotoDetail = false
                             selectedPhoto = nil

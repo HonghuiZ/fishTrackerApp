@@ -2,47 +2,53 @@ import SwiftUI
 import MapKit
 
 struct PhotoDetailView: View {
-    let metadata: PhotoMetadata
-    
-    var coordinate: CLLocationCoordinate2D? {
-        guard let lat = metadata.latitude,
-              let lon = metadata.longitude else {
-            return nil
-        }
-        return CLLocationCoordinate2D(latitude: lat, longitude: lon)
-    }
+    let photo: PhotoMetadata
     
     var body: some View {
         ScrollView {
-            if let imageData = try? Data(contentsOf: getDocumentsDirectory().appendingPathComponent(metadata.fileName)),
-               let image = UIImage(data: imageData) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .padding()
-            }
+            PhotoCard(photo: photo)
+                .padding()
             
             VStack(alignment: .leading, spacing: 10) {
-                Text("Species: \(metadata.species)")
-                Text("Location: \(metadata.location)")
-                Text("Date: \(metadata.timestamp.formatted())")
+                if !photo.species.isEmpty {
+                    Text("Species: \(photo.species)")
+                        .font(.headline)
+                }
+                if !photo.location.isEmpty {
+                    Text("Location: \(photo.location)")
+                        .font(.subheadline)
+                }
+                Text("Date: \(photo.timestamp.formatted())")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
                 
-                if let coordinate = coordinate {
-                    Map(initialPosition: .region(MKCoordinateRegion(
-                        center: coordinate,
-                        span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
-                    ))) {
-                        Marker(metadata.species, coordinate: coordinate)
-                    }
-                    .frame(height: 200)
+                if let lat = photo.latitude, let lon = photo.longitude {
+                    Text("Coordinates: \(lat), \(lon)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
             .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .navigationTitle("Photo Details")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(photo.species.isEmpty ? "Photo Details" : photo.species)
     }
-    
-    private func getDocumentsDirectory() -> URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+}
+
+
+struct PhotoDetailView_Previews: PreviewProvider {
+    static var previews: some View {
+        PhotoDetailView(photo: PhotoMetadata(
+            id: UUID(),
+            fileName: "example.jpg",
+            location: "Park",
+            timestamp: Date(),
+            hash: "examplehash",
+            pHash: "examplephash",
+            species: "Bird",
+            latitude: 40.7128,
+            longitude: -74.0060
+        ))
     }
 } 
