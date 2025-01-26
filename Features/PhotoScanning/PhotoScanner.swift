@@ -63,20 +63,23 @@ class PhotoScanner: ObservableObject {
                 imageData = data
             }
             
-            guard let finalImageData = imageData else {
+            guard let originalImageData = imageData else {
                 print("❌ Failed to get original image data")
                 continue
             }
             
+            // Compress the image while preserving metadata
+            let compressedData = ImageCompressor.shared.compressImage(data: originalImageData)
+            
             // Extract metadata using shared service
-            let extractedMetadata = ImageMetadataService.shared.extractMetadata(from: finalImageData)
+            let extractedMetadata = ImageMetadataService.shared.extractMetadata(from: originalImageData)
             let finalDate = extractedMetadata.date ?? asset.creationDate ?? asset.modificationDate ?? Date()
             
-            // Create UIImage for fish detection
-            if let image = UIImage(data: finalImageData) {
+            // Create image for fish detection
+            if let image = PlatformImage(data: compressedData) {
                 let (isFish, species) = await FishDetectionService.shared.detectFish(in: image)
                 if isFish {
-                    let exactHash = self.generateHash(from: finalImageData)
+                    let exactHash = self.generateHash(from: compressedData)
                     
                     if !self.photoHashes.contains(exactHash) {
                         if let pHash = ImageHasher.shared.calculatePerceptualHash(from: image) {
@@ -92,7 +95,7 @@ class PhotoScanner: ObservableObject {
                                 
                                 let location = await self.getPhotoLocation(from: asset)
                                 let newPhoto = Photo(
-                                    imageData: finalImageData,
+                                    imageData: compressedData,
                                     timestamp: finalDate,
                                     location: location,
                                     species: species

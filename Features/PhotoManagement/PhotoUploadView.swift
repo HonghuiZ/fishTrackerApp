@@ -92,8 +92,11 @@ struct PhotoUploadView: View {
                         return
                     }
                     
+                    // Compress the image
+                    let compressedData = ImageCompressor.shared.compressImage(data: data)
+                    
                     // Check for duplicates before processing
-                    if let duplicate = checkForDuplicates(imageData: data) {
+                    if let duplicate = checkForDuplicates(imageData: compressedData) {
                         print("\n=== Duplicate Check ===")
                         print("Found similar photo:")
                         print("- Date: \(duplicate.timestamp.formatted())")
@@ -110,67 +113,37 @@ struct PhotoUploadView: View {
                     
                     // If no duplicate, proceed with normal processing
                     await MainActor.run {
-                        selectedImageData = data
+                        selectedImageData = compressedData
                     }
                     
-                    // Try to get metadata directly from the image data
-                    if let source = CGImageSourceCreateWithData(data as CFData, nil),
-                       let metadata = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
-                        print("\n📝 Image Metadata:")
-                        
-                        // EXIF data
-                        if let exif = metadata["{Exif}"] as? [String: Any] {
-                            print("\nEXIF Data:")
-                            for (key, value) in exif {
-                                print("  \(key): \(value)")
-                            }
-                            
-                            // Try to get date
-                            if let dateTimeOriginal = exif["DateTimeOriginal"] as? String {
-                                print("📅 Original Date: \(dateTimeOriginal)")
-                            }
+                    // Extract metadata using shared service
+                    let extractedMetadata = ImageMetadataService.shared.extractMetadata(from: compressedData)
+                    
+                    // Try to get coordinates from metadata
+                    if let lat = extractedMetadata.latitude,
+                       let lon = extractedMetadata.longitude {
+                        // Get location name
+                        let location = CLLocation(latitude: lat, longitude: lon)
+                        let geocoder = CLGeocoder()
+                        if let placemark = try? await geocoder.reverseGeocodeLocation(location).first {
+                            let locationString = [
+                                placemark.locality,
+                                placemark.administrativeArea,
+                                placemark.country
+                            ].compactMap { $0 }.joined(separator: ", ")
+                            print("📍 Location name: \(locationString)")
+                            self.location = locationString
                         }
-                        
-                        // GPS data
-                        if let gps = metadata["{GPS}"] as? [String: Any] {
-                            print("\nGPS Data:")
-                            for (key, value) in gps {
-                                print("  \(key): \(value)")
-                            }
-                            
-                            // Try to get coordinates
-                            if let latitude = gps["Latitude"] as? Double,
-                               let longitude = gps["Longitude"] as? Double,
-                               let latRef = gps["LatitudeRef"] as? String,
-                               let longRef = gps["LongitudeRef"] as? String {
-                                
-                                let lat = latRef == "N" ? latitude : -latitude
-                                let lon = longRef == "E" ? longitude : -longitude
-                                
-                                print("📍 Coordinates: \(lat), \(lon)")
-                                
-                                // Get location name
-                                let location = CLLocation(latitude: lat, longitude: lon)
-                                let geocoder = CLGeocoder()
-                                if let placemark = try? await geocoder.reverseGeocodeLocation(location).first {
-                                    let locationString = [
-                                        placemark.locality,
-                                        placemark.administrativeArea,
-                                        placemark.country
-                                    ].compactMap { $0 }.joined(separator: ", ")
-                                    print("📍 Location name: \(locationString)")
-                                    self.location = locationString
-                                }
-                            }
-                        }
-                    } else {
-                        print("❌ No metadata found in image")
                     }
                     
                     // Start fish detection
-                    if let image = UIImage(data: data) {
+                    if let image = PlatformImage(data: compressedData) {
                         print("\n🐟 Starting fish detection...")
-                        await detectFish(in: image)
+                        let (isFish, species) = await FishDetectionService.shared.detectFish(in: image)
+                        await MainActor.run {
+                            self.isFishDetected = isFish
+                            self.detectedSpecies = species
+                        }
                     }
                 } catch {
                     print("Error loading photo: \(error)")

@@ -1,6 +1,7 @@
 import SwiftUI
 import MapKit
 import CoreLocation
+//import Models // For PhotoMetadata
 
 struct MapView: View {
     let photos: [PhotoMetadata]
@@ -83,58 +84,23 @@ struct MapView: View {
             if let photo = selectedPhoto {
                 NavigationView {
                     PhotoDetailView(photo: photo)
-                        .navigationBarItems(trailing: Button("Done") {
-                            showingPhotoDetail = false
-                            selectedPhoto = nil
-                        })
                 }
             }
         }
-        .onAppear {
-            setInitialRegion()
-        }
-    }
-    
-    private func setInitialRegion() {
-        guard !photosWithCoordinates.isEmpty else { return }
-        
-        let coordinates = photosWithCoordinates.compactMap { photo -> CLLocationCoordinate2D? in
-            guard let lat = photo.latitude,
-                  let lon = photo.longitude else { return nil }
-            return CLLocationCoordinate2D(latitude: lat, longitude: lon)
-        }
-        
-        guard !coordinates.isEmpty else { return }
-        
-        let minLat = coordinates.map { $0.latitude }.min() ?? 0
-        let maxLat = coordinates.map { $0.latitude }.max() ?? 0
-        let minLon = coordinates.map { $0.longitude }.min() ?? 0
-        let maxLon = coordinates.map { $0.longitude }.max() ?? 0
-        
-        let center = CLLocationCoordinate2D(
-            latitude: (minLat + maxLat) / 2,
-            longitude: (minLon + maxLon) / 2
-        )
-        
-        let span = MKCoordinateSpan(
-            latitudeDelta: (maxLat - minLat) * 1.5,
-            longitudeDelta: (maxLon - minLon) * 1.5
-        )
-        
-        region = MKCoordinateRegion(center: center, span: span)
     }
     
     private func zoomIn() {
         region.span = MKCoordinateSpan(
-            latitudeDelta: region.span.latitudeDelta * 0.5,
-            longitudeDelta: region.span.longitudeDelta * 0.5
+            latitudeDelta: region.span.latitudeDelta / 2,
+            longitudeDelta: region.span.longitudeDelta / 2
         )
     }
     
     private func zoomOut() {
         region.span = MKCoordinateSpan(
-            latitudeDelta: region.span.latitudeDelta * 2,
-            longitudeDelta: region.span.longitudeDelta * 2
+            latitudeDelta: min(region.span.latitudeDelta * 2, 180),
+            longitudeDelta: min(region.span.longitudeDelta * 2, 180)
         )
     }
 } 
+
