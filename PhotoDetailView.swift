@@ -1,41 +1,110 @@
 import SwiftUI
 import MapKit
+import UIKit
 
 struct PhotoDetailView: View {
     let photo: PhotoMetadata
+    @State private var region: MKCoordinateRegion
+    @State private var imageSize: CGSize = .zero
+    
+    init(photo: PhotoMetadata) {
+        self.photo = photo
+        // Initialize map region with photo coordinates or default to a fallback location
+        let coordinate = CLLocationCoordinate2D(
+            latitude: photo.latitude ?? 0,
+            longitude: photo.longitude ?? 0
+        )
+        _region = State(initialValue: MKCoordinateRegion(
+            center: coordinate,
+            span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+        ))
+    }
     
     var body: some View {
         ScrollView {
-            PhotoCard(photo: photo)
-                .padding()
-            
-            VStack(alignment: .leading, spacing: 10) {
-                if !photo.species.isEmpty {
-                    Text("Species: \(photo.species)")
-                        .font(.headline)
+            VStack(alignment: .leading, spacing: 16) {
+                // Photo
+                if let image = loadImage() {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            GeometryReader { geometry in
+                                Color.clear.onAppear {
+                                    imageSize = geometry.size
+                                }
+                            }
+                        )
                 }
-                if !photo.location.isEmpty {
-                    Text("Location: \(photo.location)")
-                        .font(.subheadline)
-                }
-                Text("Date: \(photo.timestamp.formatted())")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
                 
-                if let lat = photo.latitude, let lon = photo.longitude {
-                    Text("Coordinates: \(lat), \(lon)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                // Location and Map
+                if photo.latitude != nil && photo.longitude != nil {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("📍 Location")
+                            .font(.headline)
+                        
+                        if !photo.location.isEmpty {
+                            Text(photo.location)
+                                .font(.subheadline)
+                        }
+                        
+                        Map(coordinateRegion: $region, annotationItems: [photo]) { photo in
+                            MapMarker(
+                                coordinate: CLLocationCoordinate2D(
+                                    latitude: photo.latitude ?? 0,
+                                    longitude: photo.longitude ?? 0
+                                ),
+                                tint: .red
+                            )
+                        }
+                        .frame(height: 200)
+                        .cornerRadius(12)
+                    }
+                    .padding(.horizontal)
                 }
+                
+                // Metadata
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("📝 Details")
+                        .font(.headline)
+                    
+                    if !photo.species.isEmpty {
+                        Text("Species: \(photo.species)")
+                    }
+                    
+                    Text("Date: \(photo.timestamp.formatted(date: .long, time: .shortened))")
+                    
+                    if let dimensions = getImageDimensions() {
+                        Text("Dimensions: \(dimensions.width) × \(dimensions.height)")
+                    }
+                }
+                .padding(.horizontal)
             }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationBarTitleDisplayMode(.inline)
-        .navigationTitle(photo.species.isEmpty ? "Photo Details" : photo.species)
+    }
+    
+    private func loadImage() -> UIImage? {
+        let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let fileURL = documentsDirectory.appendingPathComponent(photo.fileName)
+        
+        do {
+            let imageData = try Data(contentsOf: fileURL)
+            return UIImage(data: imageData)
+        } catch {
+            print("Error loading image: \(error)")
+            return nil
+        }
+    }
+    
+    private func getImageDimensions() -> CGSize? {
+        if let image = loadImage() {
+            return CGSize(width: image.size.width, height: image.size.height)
+        }
+        return nil
     }
 }
-
 
 struct PhotoDetailView_Previews: PreviewProvider {
     static var previews: some View {
