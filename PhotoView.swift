@@ -1,6 +1,11 @@
 import SwiftUI
 import Foundation
 
+/// A view that displays a grid of photos with selection and deletion capabilities.
+/// This view is focused on photo management, allowing users to:
+/// - Select multiple photos
+/// - Delete selected photos
+/// - Navigate to detailed view of individual photos
 struct PhotoView: View {
     @EnvironmentObject var photoStore: PhotoStore
     @State private var selectedPhotos: Set<UUID> = []

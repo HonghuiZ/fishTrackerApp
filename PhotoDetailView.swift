@@ -2,6 +2,15 @@ import SwiftUI
 import MapKit
 import UIKit
 
+/// A view that displays detailed information about a single photo.
+/// This view shows:
+/// - Full-size photo
+/// - Location on a map (if available)
+/// - Metadata including:
+///   - Species identification
+///   - Date taken
+///   - Location name
+///   - Image dimensions
 struct PhotoDetailView: View {
     let photo: PhotoMetadata
     @State private var region: MKCoordinateRegion

@@ -6,7 +6,7 @@ struct ContentView: View {
     
     var body: some View {
         NavigationView {
-            PhotoViewPage()
+            MainPageView()
                 .navigationTitle("My Fish")
                 .toolbar {
                     Button(action: {
