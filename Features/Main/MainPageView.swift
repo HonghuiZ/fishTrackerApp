@@ -21,6 +21,8 @@ struct MainPageView: View {
     @State private var isEditing = false
     @State private var selectedPhotos: Set<UUID> = []
     @State private var showingDeleteAlert = false
+    @State private var isScanning = false
+    @StateObject private var scanner = PhotoScanner()
     
     private let columns = [
         GridItem(.flexible()),
@@ -161,7 +163,37 @@ struct MainPageView: View {
                         showingDeleteAlert = true
                     }
                     .disabled(selectedPhotos.isEmpty)
+                } else {
+                    Menu {
+                        Button(action: {
+                            isScanning = true
+                        }) {
+                            Label("Import All Fish Photos", systemImage: "square.and.arrow.down")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
                 }
+            }
+        }
+        .sheet(isPresented: $isScanning) {
+            NavigationView {
+                ScanningView(scanner: scanner, isFirstLaunch: .constant(false))
+                    .navigationTitle("Scanning Photos")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            if !scanner.isScanning {
+                                Button("Done") {
+                                    PhotoImportService.shared.importPhotos(
+                                        from: scanner,
+                                        into: photoStore
+                                    )
+                                    isScanning = false
+                                }
+                            }
+                        }
+                    }
             }
         }
         .alert("Delete Photos?", isPresented: $showingDeleteAlert) {
@@ -208,40 +240,5 @@ struct MainPageView: View {
         }
         selectedPhotos.removeAll()
         isEditing = false
-    }
-    
-    private func getDocumentsDirectory() -> URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-    }
-    
-    private func debugStorage() {
-        // Check UserDefaults
-        print("\n=== Checking UserDefaults ===")
-        if let data = UserDefaults.standard.data(forKey: "savedPhotosMetadata") {
-            if let metadata = try? JSONDecoder().decode([PhotoMetadata].self, from: data) {
-                print("Found \(metadata.count) photos in metadata")
-                for meta in metadata {
-                    print("- Photo: \(meta.fileName), Date: \(meta.timestamp)")
-                }
-            }
-        } else {
-            print("No metadata found in UserDefaults")
-        }
-        
-        // Check Documents Directory
-        print("\n=== Checking Documents Directory ===")
-        let documentsPath = getDocumentsDirectory()
-        print("Documents path: \(documentsPath)")
-        
-        do {
-            let files = try FileManager.default.contentsOfDirectory(at: documentsPath, includingPropertiesForKeys: nil)
-            print("Found \(files.count) files:")
-            for file in files {
-                print("- \(file.lastPathComponent)")
-            }
-        } catch {
-            print("Error reading directory: \(error)")
-        }
-        print("===========================\n")
     }
 }

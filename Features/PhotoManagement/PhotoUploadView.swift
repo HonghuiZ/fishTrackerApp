@@ -229,119 +229,37 @@ struct PhotoUploadView: View {
             return
         }
         
-        print("\n=== Saving Photo ===")
-        print("Image data size: \(imageData.count) bytes")
-        
-        // Get coordinates from metadata
-        var lat: Double?
-        var lon: Double?
-        var photoDate = Date() // Default to current date if we can't find original
-        
-        if let source = CGImageSourceCreateWithData(imageData as CFData, nil),
-           let metadata = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any] {
-            
-            // Try to get original date from EXIF
-            if let exif = metadata["{Exif}"] as? [String: Any] {
-                if let dateTimeOriginal = exif["DateTimeOriginal"] as? String {
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
-                    if let originalDate = formatter.date(from: dateTimeOriginal) {
-                        photoDate = originalDate
-                        print("📅 Using original photo date: \(photoDate)")
-                    }
-                }
-            }
-            
-            print("\nChecking GPS Data:")
-            if let gps = metadata["{GPS}"] as? [String: Any] {
-                print("Found GPS metadata:")
-                for (key, value) in gps {
-                    print("  \(key): \(value)")
-                }
-                
-                // Try different GPS formats
-                if let latitude = gps["Latitude"] as? Double,
-                   let longitude = gps["Longitude"] as? Double,
-                   let latRef = gps["LatitudeRef"] as? String,
-                   let longRef = gps["LongitudeRef"] as? String {
-                    
-                    lat = latRef == "N" ? latitude : -latitude
-                    lon = longRef == "E" ? longitude : -longitude
-                    print("📍 Format 1 - Coordinates found: \(lat ?? 0), \(lon ?? 0)")
-                }
-                // Try alternative format
-                else if let latitudeArray = gps["Latitude"] as? [Double],
-                        let longitudeArray = gps["Longitude"] as? [Double],
-                        let latRef = gps["LatitudeRef"] as? String,
-                        let longRef = gps["LongitudeRef"] as? String {
-                    
-                    // Convert DMS (Degrees, Minutes, Seconds) to decimal degrees
-                    let latitude = latitudeArray[0] + (latitudeArray[1] / 60.0) + (latitudeArray[2] / 3600.0)
-                    let longitude = longitudeArray[0] + (longitudeArray[1] / 60.0) + (longitudeArray[2] / 3600.0)
-                    
-                    lat = latRef == "N" ? latitude : -latitude
-                    lon = longRef == "E" ? longitude : -longitude
-                    print("📍 Format 2 - Coordinates found: \(lat ?? 0), \(lon ?? 0)")
-                }
-            } else {
-                print("No GPS data found in metadata")
-            }
-        }
-        
-        // Try getting coordinates from location string if GPS metadata failed
-        if lat == nil || lon == nil {
-            print("\nTrying to get coordinates from location string...")
-            let geocoder = CLGeocoder()
-            let semaphore = DispatchSemaphore(value: 0)
-            
-            geocoder.geocodeAddressString(location) { placemarks, error in
-                if let location = placemarks?.first?.location {
-                    lat = location.coordinate.latitude
-                    lon = location.coordinate.longitude
-                    print("📍 Got coordinates from location string: \(lat ?? 0), \(lon ?? 0)")
-                } else {
-                    print("Could not get coordinates from location string")
-                }
-                semaphore.signal()
-            }
-            _ = semaphore.wait(timeout: .now() + 5)
-        }
-        
-        // Save image file
-        let fileName = UUID().uuidString + ".jpg"
-        let fileURL = getDocumentsDirectory().appendingPathComponent(fileName)
-        
-        do {
-            try imageData.write(to: fileURL)
-            print("\nSaving photo metadata:")
-            print("- Location string: \(location)")
-            print("- Final coordinates: \(String(describing: lat)), \(String(describing: lon))")
-            
-            let newPhoto = PhotoMetadata(
-                id: UUID(),
-                fileName: fileName,
+        Task {
+            if let processed = await PhotoProcessor.shared.processPhoto(
+                imageData: imageData,
                 location: location,
-                timestamp: photoDate,
-                hash: generateHash(from: imageData),
-                pHash: ImageHasher.shared.calculatePerceptualHash(from: UIImage(data: imageData) ?? UIImage()) ?? "",
                 species: detectedSpecies,
-                latitude: lat,
-                longitude: lon
-            )
-            
-            // Save metadata
-            var savedPhotos = photoStore.loadMetadata()
-            savedPhotos.append(newPhoto)
-            photoStore.saveMetadata(savedPhotos)
-            
-            print("\nSave completed:")
-            print("- Total photos: \(savedPhotos.count)")
-            print("- File exists: \(FileManager.default.fileExists(atPath: fileURL.path))")
-            print("==================\n")
-            
-            dismiss()
-        } catch {
-            print("Error saving photo: \(error)")
+                photoStore: photoStore
+            ) {
+                let newPhoto = PhotoMetadata(
+                    id: UUID(),
+                    fileName: processed.fileName,
+                    location: processed.location,
+                    timestamp: processed.timestamp,
+                    hash: processed.hash,
+                    pHash: processed.pHash,
+                    species: processed.species,
+                    latitude: processed.latitude,
+                    longitude: processed.longitude
+                )
+                
+                // Save metadata
+                var savedPhotos = photoStore.loadMetadata()
+                savedPhotos.append(newPhoto)
+                photoStore.saveMetadata(savedPhotos)
+                
+                print("\nSave completed:")
+                print("- Total photos: \(savedPhotos.count)")
+                dismiss()
+            } else {
+                // Handle duplicate or error case
+                print("❌ Failed to process photo")
+            }
         }
     }
 
