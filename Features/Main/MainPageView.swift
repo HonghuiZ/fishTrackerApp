@@ -18,6 +18,9 @@ struct MainPageView: View {
     @State private var searchText = ""
     @State private var showingMap = false
     @State private var selectedSpecies: String? = nil
+    @State private var isEditing = false
+    @State private var selectedPhotos: Set<UUID> = []
+    @State private var showingDeleteAlert = false
     
     private let columns = [
         GridItem(.flexible()),
@@ -44,11 +47,24 @@ struct MainPageView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMMM yyyy"
         
+        // First group photos by month
         let grouped = Dictionary(grouping: filteredPhotos) { photo in
             formatter.string(from: photo.timestamp)
         }
         
-        return grouped.sorted { $0.key > $1.key }
+        // Sort photos within each group by timestamp (most recent first)
+        let sortedGroups = grouped.mapValues { photos in
+            photos.sorted { $0.timestamp > $1.timestamp }
+        }
+        
+        // Sort the groups by the first photo's timestamp in each group (most recent first)
+        return sortedGroups.sorted { group1, group2 in
+            guard let date1 = group1.value.first?.timestamp,
+                  let date2 = group2.value.first?.timestamp else {
+                return false
+            }
+            return date1 > date2
+        }
     }
     
     var body: some View {
@@ -59,6 +75,7 @@ struct MainPageView: View {
                     Image(systemName: "map").tag(true)
                 }
                 .pickerStyle(SegmentedPickerStyle())
+                .disabled(isEditing)
                 
                 Menu {
                     Button("All Species") {
@@ -106,8 +123,16 @@ struct MainPageView: View {
                                     
                                     LazyVGrid(columns: columns, spacing: 2) {
                                         ForEach(photos) { metadata in
-                                            NavigationLink(destination: PhotoDetailView(photo: metadata)) {
+                                            if isEditing {
                                                 PhotoThumbnail(metadata: metadata)
+                                                    .overlay(selectionOverlay(for: metadata))
+                                                    .onTapGesture {
+                                                        handlePhotoTap(metadata)
+                                                    }
+                                            } else {
+                                                NavigationLink(destination: PhotoDetailView(photo: metadata)) {
+                                                    PhotoThumbnail(metadata: metadata)
+                                                }
                                             }
                                         }
                                     }
@@ -118,9 +143,71 @@ struct MainPageView: View {
                 }
             }
         }
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(isEditing ? "Cancel" : "Select") {
+                    withAnimation {
+                        isEditing.toggle()
+                        if !isEditing {
+                            selectedPhotos.removeAll()
+                        }
+                    }
+                }
+            }
+            
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if isEditing {
+                    Button("Delete", role: .destructive) {
+                        showingDeleteAlert = true
+                    }
+                    .disabled(selectedPhotos.isEmpty)
+                }
+            }
+        }
+        .alert("Delete Photos?", isPresented: $showingDeleteAlert) {
+            Button("Delete", role: .destructive) {
+                deleteSelectedPhotos()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Are you sure you want to delete \(selectedPhotos.count) photo\(selectedPhotos.count == 1 ? "" : "s")?")
+        }
         .onAppear {
             _ = photoStore.loadMetadata()
         }
+    }
+    
+    private func selectionOverlay(for photo: PhotoMetadata) -> some View {
+        ZStack {
+            if isEditing {
+                Color.black.opacity(0.3)
+                
+                Image(systemName: selectedPhotos.contains(photo.id) ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 24))
+                    .foregroundColor(selectedPhotos.contains(photo.id) ? .blue : .white)
+                    .padding(8)
+            }
+        }
+    }
+    
+    private func handlePhotoTap(_ photo: PhotoMetadata) {
+        if isEditing {
+            withAnimation {
+                if selectedPhotos.contains(photo.id) {
+                    selectedPhotos.remove(photo.id)
+                } else {
+                    selectedPhotos.insert(photo.id)
+                }
+            }
+        }
+    }
+    
+    private func deleteSelectedPhotos() {
+        for id in selectedPhotos {
+            photoStore.deletePhoto(withId: id)
+        }
+        selectedPhotos.removeAll()
+        isEditing = false
     }
     
     private func getDocumentsDirectory() -> URL {
@@ -158,32 +245,3 @@ struct MainPageView: View {
         print("===========================\n")
     }
 }
-
-/// A reusable component for displaying photo thumbnails in the grid
-/// Extracts thumbnail rendering logic to keep the main view clean
-private struct PhotoThumbnail: View {
-    let metadata: PhotoMetadata
-    
-    var body: some View {
-        Group {
-            if let imageData = try? Data(contentsOf: getDocumentsDirectory().appendingPathComponent(metadata.fileName)),
-               let image = UIImage(data: imageData) {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(height: UIScreen.main.bounds.width / 3)
-                    .clipped()
-            }
-        }
-    }
-    
-    private func getDocumentsDirectory() -> URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-    }
-}
-
-#Preview {
-    NavigationView {
-        MainPageView()
-    }
-} 

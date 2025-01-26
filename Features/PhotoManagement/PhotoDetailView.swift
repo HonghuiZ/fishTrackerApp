@@ -6,7 +6,7 @@ import UIKit
 /// This view shows:
 /// - Full-size photo
 /// - Location on a map (if available)
-/// - Metadata including:
+///   - Metadata including:
 ///   - Species identification
 ///   - Date taken
 ///   - Location name
@@ -15,10 +15,13 @@ struct PhotoDetailView: View {
     let photo: PhotoMetadata
     @State private var region: MKCoordinateRegion
     @State private var imageSize: CGSize = .zero
+    @State private var isEditingSpecies = false
+    @State private var editedSpecies: String
+    @EnvironmentObject var photoStore: PhotoStore
     
     init(photo: PhotoMetadata) {
         self.photo = photo
-        // Initialize map region with photo coordinates or default to a fallback location
+        self._editedSpecies = State(initialValue: photo.species)
         let coordinate = CLLocationCoordinate2D(
             latitude: photo.latitude ?? 0,
             longitude: photo.longitude ?? 0
@@ -78,8 +81,20 @@ struct PhotoDetailView: View {
                     Text("📝 Details")
                         .font(.headline)
                     
-                    if !photo.species.isEmpty {
-                        Text("Species: \(photo.species)")
+                    if isEditingSpecies {
+                        TextField("Species", text: $editedSpecies)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .padding(.horizontal)
+                    } else {
+                        HStack {
+                            Text("Species: \(photo.species)")
+                            Spacer()
+                            Button(action: {
+                                isEditingSpecies = true
+                            }) {
+                                Image(systemName: "pencil")
+                            }
+                        }
                     }
                     
                     Text("Date: \(photo.timestamp.formatted(date: .long, time: .shortened))")
@@ -92,6 +107,41 @@ struct PhotoDetailView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if isEditingSpecies {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        updateSpecies()
+                    }
+                }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        editedSpecies = photo.species
+                        isEditingSpecies = false
+                    }
+                }
+            }
+        }
+    }
+    
+    private func updateSpecies() {
+        var metadata = photoStore.loadMetadata()
+        if let index = metadata.firstIndex(where: { $0.id == photo.id }) {
+            let updatedPhoto = PhotoMetadata(
+                id: photo.id,
+                fileName: photo.fileName,
+                location: photo.location,
+                timestamp: photo.timestamp,
+                hash: photo.hash,
+                pHash: photo.pHash,
+                species: editedSpecies,
+                latitude: photo.latitude,
+                longitude: photo.longitude
+            )
+            metadata[index] = updatedPhoto
+            photoStore.saveMetadata(metadata)
+        }
+        isEditingSpecies = false
     }
     
     private func loadImage() -> UIImage? {
