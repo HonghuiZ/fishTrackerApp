@@ -8,7 +8,7 @@
 import SwiftUI
 
 @main
-struct trackerApp: App {
+struct ReelRecord: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
