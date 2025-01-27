@@ -16,7 +16,7 @@ import UIKit
 struct MainPageView: View {
     @EnvironmentObject var photoStore: PhotoStore
     @State private var searchText = ""
-    @State private var showingMap = false
+    @State private var selectedView = 0  // 0: grid, 1: map, 2: stats
     @State private var selectedSpecies: String? = nil
     @State private var isEditing = false
     @State private var selectedPhotos: Set<UUID> = []
@@ -32,16 +32,15 @@ struct MainPageView: View {
     
     // Get unique species from photos
     private var availableSpecies: [String] {
-        let species = Set(photoStore.photos.map { $0.species })
-        return species.sorted()
+        Set(photoStore.photos.map { $0.species }).sorted()
     }
     
     // Filter photos based on selected species
     private var filteredPhotos: [PhotoMetadata] {
-        guard let selectedSpecies = selectedSpecies else {
-            return photoStore.photos
+        if let species = selectedSpecies {
+            return photoStore.photos.filter { $0.species == species }
         }
-        return photoStore.photos.filter { $0.species == selectedSpecies }
+        return photoStore.photos
     }
     
     // Computed property to group photos by month
@@ -72,9 +71,10 @@ struct MainPageView: View {
     var body: some View {
         VStack {
             HStack {
-                Picker("View", selection: $showingMap) {
-                    Image(systemName: "square.grid.3x3").tag(false)
-                    Image(systemName: "map").tag(true)
+                Picker("View", selection: $selectedView) {
+                    Image(systemName: "square.grid.3x3").tag(0)
+                    Image(systemName: "map").tag(1)
+                    Image(systemName: "chart.bar").tag(2)
                 }
                 .pickerStyle(SegmentedPickerStyle())
                 .disabled(isEditing)
@@ -105,9 +105,12 @@ struct MainPageView: View {
             }
             .padding()
             
-            if showingMap {
+            switch selectedView {
+            case 1:
                 MapView(photos: filteredPhotos)
-            } else {
+            case 2:
+                StatsView(photos: filteredPhotos)
+            default:
                 if filteredPhotos.isEmpty {
                     ContentUnavailableView(
                         "No Photos Found",
@@ -163,16 +166,6 @@ struct MainPageView: View {
                         showingDeleteAlert = true
                     }
                     .disabled(selectedPhotos.isEmpty)
-                } else {
-                    Menu {
-                        Button(action: {
-                            isScanning = true
-                        }) {
-                            Label("Import All Fish Photos", systemImage: "square.and.arrow.down")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
                 }
             }
         }
